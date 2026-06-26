@@ -48,20 +48,26 @@ const characterProfile = {
   sunny: {
     scale: 0.28,
     screenScale: 0.17,
+    eyeLeft: { x: 0.415, y: 0.248, w: 0.125, h: 0.065 },
+    eyeRight: { x: 0.585, y: 0.248, w: 0.125, h: 0.065 },
     eye: { x: 0.5, y: 0.245, w: 0.28, h: 0.09 },
-    mouth: { x: 0.5, y: 0.36, w: 0.3, h: 0.075 }
+    mouth: { x: 0.5, y: 0.37, w: 0.255, h: 0.07 }
   },
   green: {
     scale: 0.25,
     screenScale: 0.16,
+    eyeLeft: { x: 0.42, y: 0.225, w: 0.12, h: 0.08 },
+    eyeRight: { x: 0.57, y: 0.222, w: 0.12, h: 0.08 },
     eye: { x: 0.52, y: 0.235, w: 0.23, h: 0.085 },
-    mouth: { x: 0.51, y: 0.315, w: 0.18, h: 0.052 }
+    mouth: { x: 0.51, y: 0.36, w: 0.2, h: 0.075 }
   },
   potato: {
     scale: 0.19,
     screenScale: 0.12,
+    eyeLeft: { x: 0.43, y: 0.27, w: 0.105, h: 0.055 },
+    eyeRight: { x: 0.59, y: 0.27, w: 0.105, h: 0.055 },
     eye: { x: 0.51, y: 0.265, w: 0.28, h: 0.08 },
-    mouth: { x: 0.5, y: 0.39, w: 0.23, h: 0.07 }
+    mouth: { x: 0.5, y: 0.39, w: 0.2, h: 0.065 }
   }
 };
 
@@ -273,7 +279,26 @@ function drawCharacter() {
   drawLiveFaceCutouts(x, y, w, h, profile, anchorX, anchorY);
 }
 
-function drawOvalVideo(video, centerX, centerY, width, height, source) {
+function drawFeatureShape(centerX, centerY, width, height, shape) {
+  const left = centerX - width / 2;
+  const right = centerX + width / 2;
+  const top = centerY - height / 2;
+  const bottom = centerY + height / 2;
+
+  ctx.beginPath();
+  if (shape === "eye") {
+    ctx.moveTo(left, centerY);
+    ctx.bezierCurveTo(left + width * 0.2, top - height * 0.08, right - width * 0.18, top, right, centerY);
+    ctx.bezierCurveTo(right - width * 0.2, bottom + height * 0.08, left + width * 0.18, bottom, left, centerY);
+  } else {
+    ctx.moveTo(left, centerY);
+    ctx.bezierCurveTo(left + width * 0.18, top, right - width * 0.18, top, right, centerY);
+    ctx.bezierCurveTo(right - width * 0.18, bottom, left + width * 0.18, bottom, left, centerY);
+  }
+  ctx.closePath();
+}
+
+function drawVideoFeature(video, centerX, centerY, width, height, source, shape) {
   if (!video.videoWidth || !video.videoHeight) return;
 
   const sourceX = video.videoWidth * source.x;
@@ -282,10 +307,12 @@ function drawOvalVideo(video, centerX, centerY, width, height, source) {
   const sourceH = video.videoHeight * source.h;
 
   ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(centerX, centerY, width / 2, height / 2, 0, 0, Math.PI * 2);
+  drawFeatureShape(centerX, centerY, width, height, shape);
   ctx.clip();
-  ctx.filter = "saturate(1.08) contrast(1.05)";
+  ctx.globalAlpha = shape === "eye" ? 0.92 : 0.86;
+  ctx.filter = shape === "eye"
+    ? "saturate(1.05) contrast(1.14) brightness(0.98)"
+    : "saturate(1.1) contrast(1.08) brightness(0.97)";
   ctx.drawImage(
     video,
     sourceX,
@@ -298,31 +325,50 @@ function drawOvalVideo(video, centerX, centerY, width, height, source) {
     height
   );
   ctx.restore();
+
+  ctx.save();
+  drawFeatureShape(centerX, centerY, width, height, shape);
+  ctx.lineWidth = Math.max(1.5, Math.min(width, height) * 0.11);
+  ctx.strokeStyle = shape === "eye" ? "rgba(40, 18, 8, 0.18)" : "rgba(76, 28, 14, 0.16)";
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawLiveFaceCutouts(x, y, w, h, profile, anchorX, anchorY) {
   if (!faceToggle.checked || !cameraStream || !cameraVideo.videoWidth) return;
 
   const mirror = cameraSelect.value === "user";
-  const eyeX = x + w * profile.eye.x;
-  const eyeY = y + h * profile.eye.y;
+  const leftEyeX = x + w * (profile.eyeLeft?.x ?? profile.eye.x - profile.eye.w * 0.28);
+  const rightEyeX = x + w * (profile.eyeRight?.x ?? profile.eye.x + profile.eye.w * 0.28);
+  const leftEyeY = y + h * (profile.eyeLeft?.y ?? profile.eye.y);
+  const rightEyeY = y + h * (profile.eyeRight?.y ?? profile.eye.y);
   const mouthX = x + w * profile.mouth.x;
   const mouthY = y + h * profile.mouth.y;
-  const blinkHeight = Math.max(0.08, 1 - faceState.blink * 0.86);
+  const blinkHeight = Math.max(0.16, 1 - faceState.blink * 0.82);
   const smileWidth = 1 + faceState.smile * 0.12;
   const mouthHeight = 1 + faceState.mouthOpen * 0.58;
-  const eyeSource = faceState.landmarks ? landmarkSourceBox("eyes") : {
-    x: 0.36,
-    y: 0.24,
-    w: 0.28,
-    h: 0.13
+  const leftEyeSource = faceState.landmarks ? landmarkSourceBox("leftEye") : {
+    x: 0.35,
+    y: 0.25,
+    w: 0.13,
+    h: 0.1
+  };
+  const rightEyeSource = faceState.landmarks ? landmarkSourceBox("rightEye") : {
+    x: 0.52,
+    y: 0.25,
+    w: 0.13,
+    h: 0.1
   };
   const mouthSource = faceState.landmarks ? landmarkSourceBox("mouth") : {
-    x: 0.38,
-    y: 0.52,
-    w: 0.24,
-    h: 0.11
+    x: 0.41,
+    y: 0.54,
+    w: 0.18,
+    h: 0.09
   };
+  const leftEyeWidth = w * (profile.eyeLeft?.w ?? profile.eye.w * 0.44);
+  const rightEyeWidth = w * (profile.eyeRight?.w ?? profile.eye.w * 0.44);
+  const leftEyeHeight = h * (profile.eyeLeft?.h ?? profile.eye.h) * blinkHeight;
+  const rightEyeHeight = h * (profile.eyeRight?.h ?? profile.eye.h) * blinkHeight;
 
   ctx.save();
   if (faceState.active) {
@@ -333,11 +379,13 @@ function drawLiveFaceCutouts(x, y, w, h, profile, anchorX, anchorY) {
   if (mirror) {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
-    drawOvalVideo(cameraVideo, canvas.width - eyeX, eyeY, w * profile.eye.w, h * profile.eye.h * blinkHeight, eyeSource);
-    drawOvalVideo(cameraVideo, canvas.width - mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
+    drawVideoFeature(cameraVideo, canvas.width - leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, leftEyeSource, "eye");
+    drawVideoFeature(cameraVideo, canvas.width - rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, rightEyeSource, "eye");
+    drawVideoFeature(cameraVideo, canvas.width - mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource, "mouth");
   } else {
-    drawOvalVideo(cameraVideo, eyeX, eyeY, w * profile.eye.w, h * profile.eye.h * blinkHeight, eyeSource);
-    drawOvalVideo(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
+    drawVideoFeature(cameraVideo, leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, leftEyeSource, "eye");
+    drawVideoFeature(cameraVideo, rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, rightEyeSource, "eye");
+    drawVideoFeature(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource, "mouth");
   }
   ctx.restore();
 }
@@ -363,22 +411,24 @@ function averagePoint(points) {
 
 function landmarkSourceBox(kind) {
   const landmarks = faceState.landmarks;
-  const ids = kind === "eyes"
-    ? [33, 133, 159, 145, 362, 263, 386, 374]
-    : [61, 291, 13, 14, 78, 308];
+  const ids = kind === "leftEye"
+    ? [33, 133, 159, 145, 160, 144]
+    : kind === "rightEye"
+      ? [362, 263, 386, 374, 387, 373]
+      : [61, 291, 13, 14, 78, 308];
   const points = ids.map((id) => landmarks[id]);
   const minX = Math.min(...points.map((point) => point.x));
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxY = Math.max(...points.map((point) => point.y));
-  const padX = kind === "eyes" ? 0.07 : 0.035;
-  const padY = kind === "eyes" ? 0.035 : 0.03;
+  const padX = kind.includes("Eye") ? 0.022 : 0.026;
+  const padY = kind.includes("Eye") ? 0.018 : 0.024;
 
   return {
     x: clamp(minX - padX, 0, 1),
     y: clamp(minY - padY, 0, 1),
-    w: clamp(maxX - minX + padX * 2, 0.05, 0.7),
-    h: clamp(maxY - minY + padY * 2, 0.04, 0.45)
+    w: clamp(maxX - minX + padX * 2, 0.035, 0.42),
+    h: clamp(maxY - minY + padY * 2, 0.03, 0.28)
   };
 }
 
