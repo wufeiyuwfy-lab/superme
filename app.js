@@ -343,14 +343,20 @@ function pupilOffset(kind) {
 
 function drawStylizedEye(centerX, centerY, width, height, kind) {
   const blink = faceState.active ? faceState.blink : 0;
+  const side = kind === "left" ? -1 : 1;
   const open = clamp(1 - blink * 0.94, 0.05, 1);
-  const eyeHeight = height * open;
+  const squash = faceState.active ? 0.82 + faceState.smile * 0.08 : 0.86;
+  const eyeHeight = height * open * squash;
   const offset = pupilOffset(kind);
-  const pupilX = centerX + width * offset.x;
-  const pupilY = centerY + eyeHeight * offset.y * 0.42;
-  const pupilRadius = Math.max(1.5, Math.min(width, height) * (0.25 - blink * 0.1));
+  const pupilX = centerX + width * offset.x * 1.45;
+  const pupilY = centerY + eyeHeight * offset.y * 0.56;
+  const pupilRadius = Math.max(1.5, Math.min(width, height) * (0.28 - blink * 0.12));
 
   ctx.save();
+  ctx.translate(centerX, centerY);
+  ctx.rotate(side * -0.08);
+  ctx.scale(1.08, 0.9 + open * 0.1);
+  ctx.translate(-centerX, -centerY);
   drawFeatureShape(centerX, centerY, width, eyeHeight, "eye");
   ctx.fillStyle = "rgba(255, 244, 222, 0.98)";
   ctx.fill();
@@ -372,6 +378,10 @@ function drawStylizedEye(centerX, centerY, width, height, kind) {
   ctx.restore();
 
   ctx.save();
+  ctx.translate(centerX, centerY);
+  ctx.rotate(side * -0.08);
+  ctx.scale(1.08, 0.9 + open * 0.1);
+  ctx.translate(-centerX, -centerY);
   drawFeatureShape(centerX, centerY, width, eyeHeight, "eye");
   ctx.lineWidth = Math.max(2, height * 0.18);
   ctx.strokeStyle = "rgba(38, 16, 7, 0.38)";
@@ -380,6 +390,9 @@ function drawStylizedEye(centerX, centerY, width, height, kind) {
 
   if (blink > 0.62) {
     ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(side * -0.08);
+    ctx.translate(-centerX, -centerY);
     ctx.lineCap = "round";
     ctx.lineWidth = Math.max(2.5, height * 0.18);
     ctx.strokeStyle = "rgba(54, 20, 6, 0.62)";
@@ -389,6 +402,24 @@ function drawStylizedEye(centerX, centerY, width, height, kind) {
     ctx.stroke();
     ctx.restore();
   }
+}
+
+function warpedMouthMetrics(centerX, centerY, width, height) {
+  const open = clamp(faceState.active ? faceState.mouthOpen : 0.28, 0, 1);
+  const smile = clamp(faceState.active ? faceState.smile : 0.15, 0, 1);
+  const archedY = centerY - height * (0.08 + smile * 0.08);
+  const visibleWidth = width * (0.82 + smile * 0.24 - open * 0.05);
+  const visibleHeight = Math.max(height * 0.16, height * (0.24 + open * 1.06));
+  const skew = (faceState.landmarks ? pupilOffset("left").x + pupilOffset("right").x : 0) * width * 0.05;
+
+  return {
+    x: centerX + skew,
+    y: archedY,
+    w: visibleWidth,
+    h: visibleHeight,
+    open,
+    smile
+  };
 }
 
 function extractInnerMouthPatch(video, source) {
@@ -428,8 +459,9 @@ function extractInnerMouthPatch(video, source) {
     const isTeeth = brightness > 142 && saturation < 0.34;
     const isInnerMouth = brightness < 82 || (r > g * 1.12 && r > b * 1.08 && brightness < 118);
     const isSkinOrLip = brightness > 95 && r > g * 1.12 && g > b * 1.05 && saturation > 0.24;
+    const isSpecularEdge = brightness > 218 && saturation < 0.16;
 
-    if (!inMouthShape || (!isTeeth && !isInnerMouth) || isSkinOrLip) {
+    if (!inMouthShape || (!isTeeth && !isInnerMouth) || isSkinOrLip || isSpecularEdge) {
       data[i + 3] = 0;
       continue;
     }
@@ -450,28 +482,29 @@ function extractInnerMouthPatch(video, source) {
 }
 
 function drawMouthFeature(video, centerX, centerY, width, height, source) {
-  const open = clamp(faceState.active ? faceState.mouthOpen : 0.28, 0, 1);
-  const visibleHeight = Math.max(height * 0.18, height * (0.32 + open * 0.86));
-  const visibleWidth = width * (0.86 + faceState.smile * 0.16);
+  const mouth = warpedMouthMetrics(centerX, centerY, width, height);
 
   ctx.save();
-  drawFeatureShape(centerX, centerY, visibleWidth, visibleHeight, "mouth");
+  ctx.translate(mouth.x, mouth.y);
+  ctx.scale(1.12, 0.86 + mouth.open * 0.28);
+  ctx.translate(-mouth.x, -mouth.y);
+  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
   ctx.fillStyle = "rgba(37, 10, 7, 0.96)";
   ctx.fill();
   ctx.clip();
-  if (open > 0.12) {
-    const teethH = visibleHeight * clamp(0.25 - open * 0.06, 0.12, 0.24);
+  if (mouth.open > 0.12) {
+    const teethH = mouth.h * clamp(0.25 - mouth.open * 0.06, 0.12, 0.24);
     ctx.fillStyle = "rgba(248, 239, 220, 0.94)";
-    drawRoundRect(centerX - visibleWidth * 0.33, centerY - visibleHeight * 0.37, visibleWidth * 0.66, teethH, teethH * 0.42);
+    drawRoundRect(mouth.x - mouth.w * 0.34, mouth.y - mouth.h * 0.38, mouth.w * 0.68, teethH, teethH * 0.42);
     ctx.fill();
     ctx.fillStyle = "rgba(104, 44, 27, 0.56)";
-    ctx.fillRect(centerX - visibleWidth * 0.26, centerY - visibleHeight * 0.37, 1.4, teethH);
-    ctx.fillRect(centerX, centerY - visibleHeight * 0.37, 1.4, teethH);
-    ctx.fillRect(centerX + visibleWidth * 0.26, centerY - visibleHeight * 0.37, 1.4, teethH);
+    ctx.fillRect(mouth.x - mouth.w * 0.25, mouth.y - mouth.h * 0.38, 1.4, teethH);
+    ctx.fillRect(mouth.x, mouth.y - mouth.h * 0.38, 1.4, teethH);
+    ctx.fillRect(mouth.x + mouth.w * 0.25, mouth.y - mouth.h * 0.38, 1.4, teethH);
   }
-  if (open > 0.42) {
+  if (mouth.open > 0.42) {
     ctx.beginPath();
-    ctx.ellipse(centerX, centerY + visibleHeight * 0.2, visibleWidth * 0.23, visibleHeight * 0.13, 0, 0, Math.PI * 2);
+    ctx.ellipse(mouth.x, mouth.y + mouth.h * 0.2, mouth.w * 0.24, mouth.h * 0.13, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(166, 65, 45, 0.72)";
     ctx.fill();
   }
@@ -481,18 +514,21 @@ function drawMouthFeature(video, centerX, centerY, width, height, source) {
   if (!patch) return;
 
   ctx.save();
-  drawFeatureShape(centerX, centerY, visibleWidth, visibleHeight, "mouth");
+  ctx.translate(mouth.x, mouth.y);
+  ctx.scale(1.12, 0.86 + mouth.open * 0.28);
+  ctx.translate(-mouth.x, -mouth.y);
+  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
   ctx.clip();
   ctx.globalAlpha = 0.48;
   ctx.filter = "saturate(1.04) contrast(1.18) brightness(0.96)";
-  ctx.drawImage(patch, centerX - visibleWidth / 2, centerY - visibleHeight / 2, visibleWidth, visibleHeight);
+  ctx.drawImage(patch, mouth.x - mouth.w / 2, mouth.y - mouth.h / 2, mouth.w, mouth.h);
   ctx.restore();
 
   ctx.save();
-  const shadow = ctx.createRadialGradient(centerX, centerY, 1, centerX, centerY, width * 0.58);
+  const shadow = ctx.createRadialGradient(mouth.x, mouth.y, 1, mouth.x, mouth.y, width * 0.58);
   shadow.addColorStop(0, "rgba(0, 0, 0, 0)");
   shadow.addColorStop(1, "rgba(47, 15, 7, 0.22)");
-  drawFeatureShape(centerX, centerY, visibleWidth, visibleHeight, "mouth");
+  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
   ctx.fillStyle = shadow;
   ctx.fill();
   ctx.restore();
@@ -514,6 +550,31 @@ function drawMustacheFrontLayer(x, y, w, h, profile) {
   ctx.shadowColor = "rgba(61, 24, 5, 0.16)";
   ctx.shadowBlur = Math.max(6, w * 0.018);
   ctx.drawImage(mascot, sourceX, sourceY, sourceW, sourceH, destX, destY, destW, destH);
+  ctx.restore();
+}
+
+function clearFeatureSeats(x, y, w, h, profile) {
+  const seats = [
+    profile.eyeLeft && { ...profile.eyeLeft, shape: "eye" },
+    profile.eyeRight && { ...profile.eyeRight, shape: "eye" },
+    profile.mouth && { ...profile.mouth, shape: "mouth" }
+  ].filter(Boolean);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  for (const seat of seats) {
+    const cx = x + w * seat.x;
+    const cy = y + h * seat.y;
+    const sw = w * seat.w * (seat.shape === "mouth" ? 1.22 : 1.18);
+    const sh = h * seat.h * (seat.shape === "mouth" ? 1.32 : 1.2);
+    const gradient = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(sw, sh) * 0.65);
+    gradient.addColorStop(0, "rgba(255, 174, 52, 0.95)");
+    gradient.addColorStop(0.62, "rgba(238, 118, 21, 0.58)");
+    gradient.addColorStop(1, "rgba(238, 118, 21, 0)");
+    drawFeatureShape(cx, cy, sw, sh, seat.shape);
+    ctx.fillStyle = selectedCharacter === "green" ? "rgba(66, 112, 31, 0.82)" : gradient;
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -545,6 +606,7 @@ function drawLensFeatures(x, y, w, h, profile, anchorX, anchorY) {
     ctx.rotate(faceState.tilt * 0.72);
     ctx.translate(-anchorX, -anchorY);
   }
+  clearFeatureSeats(x, y, w, h, profile);
   drawStylizedEye(leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, "left");
   drawStylizedEye(rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, "right");
   drawMouthFeature(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
