@@ -18,7 +18,7 @@ const statusText = document.querySelector("#statusText");
 const faceToggle = document.querySelector("#faceToggle");
 
 const mascot = new Image();
-mascot.src = "./public/superme-mustache.png";
+mascot.src = "./assets/superme-mustache.png";
 
 let cameraStream;
 let screenStream;
