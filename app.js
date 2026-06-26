@@ -545,8 +545,19 @@ function drawMustacheFrontLayer(x, y, w, h, profile) {
   const destY = y + h * (m.y - m.h / 2);
   const destW = w * m.w;
   const destH = h * m.h;
+  const leftX = destX + destW * 0.34;
+  const rightX = destX + destW * 0.66;
+  const lobeY = destY + destH * 0.55;
+  const lobeW = destW * 0.43;
+  const lobeH = destH * 0.72;
+  const centerY = destY + destH * 0.36;
 
   ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(leftX, lobeY, lobeW * 0.55, lobeH * 0.5, -0.18, 0, Math.PI * 2);
+  ctx.ellipse(rightX, lobeY, lobeW * 0.55, lobeH * 0.5, 0.18, 0, Math.PI * 2);
+  ctx.ellipse(destX + destW * 0.5, centerY, destW * 0.18, destH * 0.2, 0, 0, Math.PI * 2);
+  ctx.clip();
   ctx.shadowColor = "rgba(61, 24, 5, 0.16)";
   ctx.shadowBlur = Math.max(6, w * 0.018);
   ctx.drawImage(mascot, sourceX, sourceY, sourceW, sourceH, destX, destY, destW, destH);
@@ -565,14 +576,14 @@ function clearFeatureSeats(x, y, w, h, profile) {
   for (const seat of seats) {
     const cx = x + w * seat.x;
     const cy = y + h * seat.y;
-    const sw = w * seat.w * (seat.shape === "mouth" ? 1.22 : 1.18);
-    const sh = h * seat.h * (seat.shape === "mouth" ? 1.32 : 1.2);
+    const sw = w * seat.w * (seat.shape === "mouth" ? 1.55 : 1.48);
+    const sh = h * seat.h * (seat.shape === "mouth" ? 1.62 : 1.52);
     const gradient = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(sw, sh) * 0.65);
-    gradient.addColorStop(0, "rgba(255, 174, 52, 0.95)");
-    gradient.addColorStop(0.62, "rgba(238, 118, 21, 0.58)");
-    gradient.addColorStop(1, "rgba(238, 118, 21, 0)");
+    gradient.addColorStop(0, "rgba(255, 163, 39, 1)");
+    gradient.addColorStop(0.58, "rgba(237, 110, 16, 0.94)");
+    gradient.addColorStop(1, "rgba(237, 110, 16, 0.42)");
     drawFeatureShape(cx, cy, sw, sh, seat.shape);
-    ctx.fillStyle = selectedCharacter === "green" ? "rgba(66, 112, 31, 0.82)" : gradient;
+    ctx.fillStyle = selectedCharacter === "green" ? "rgba(62, 104, 30, 0.98)" : gradient;
     ctx.fill();
   }
   ctx.restore();
