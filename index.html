@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SuperMe</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar" aria-label="SuperMe controls">
+        <a class="brand" href="./" aria-label="SuperMe home">
+          <span class="brand-mark">S</span>
+          <span>SuperMe</span>
+        </a>
+
+        <div class="status" id="statusText">Ready</div>
+
+        <div class="top-actions">
+          <button class="ghost-button" id="downloadBtn" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+            </svg>
+            Download
+          </button>
+        </div>
+      </header>
+
+      <section class="studio" aria-label="SuperMe recorder">
+        <aside class="panel panel-left" aria-label="Recording sources">
+          <div>
+            <p class="panel-label">Source</p>
+            <h1>Create as yourself, record as SuperMe.</h1>
+          </div>
+
+          <div class="control-list">
+            <label class="switch-row">
+              <input id="cameraToggle" type="checkbox" checked />
+              <span class="switch-track"></span>
+              <span>
+                <strong>Camera</strong>
+                <small>Front, rear, or webcam</small>
+              </span>
+            </label>
+
+            <label class="switch-row">
+              <input id="screenToggle" type="checkbox" />
+              <span class="switch-track"></span>
+              <span>
+                <strong>Screen</strong>
+                <small>Desktop, tab, or window</small>
+              </span>
+            </label>
+
+            <label class="switch-row">
+              <input id="micToggle" type="checkbox" checked />
+              <span class="switch-track"></span>
+              <span>
+                <strong>Mic</strong>
+                <small>Voice in the recording</small>
+              </span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label for="qualitySelect">Quality</label>
+            <select id="qualitySelect">
+              <option value="1080">1080p · 30 FPS</option>
+              <option value="720">720p · 30 FPS</option>
+              <option value="72060">720p · 60 FPS</option>
+            </select>
+          </div>
+
+          <div class="record-stack">
+            <button class="record-button" id="recordBtn" type="button">
+              <span></span>
+              Record
+            </button>
+            <button class="stop-button" id="stopBtn" type="button" disabled>
+              <span></span>
+              Stop
+            </button>
+          </div>
+        </aside>
+
+        <section class="preview-wrap" aria-label="Live preview">
+          <canvas id="recordingCanvas" width="1920" height="1080"></canvas>
+          <div class="drag-frame" id="dragFrame" aria-hidden="true">
+            <span class="drag-handle"></span>
+            <span class="resize-handle"></span>
+          </div>
+          <video id="cameraVideo" playsinline muted></video>
+          <video id="screenVideo" playsinline muted></video>
+        </section>
+
+        <aside class="panel panel-right" aria-label="Character and background">
+          <div>
+            <p class="panel-label">Look</p>
+            <h2>Character</h2>
+          </div>
+
+          <div class="character-grid" id="characterGrid" role="radiogroup" aria-label="Choose character">
+            <button class="character-option is-active" type="button" data-character="sunny" data-src="./public/superme-mustache.png" aria-pressed="true">
+              <img src="./public/superme-mustache.png" alt="" />
+              <span>Sunny</span>
+            </button>
+            <button class="character-option" type="button" data-character="green" data-src="./public/superme-green.png" aria-pressed="false">
+              <img src="./public/superme-green.png" alt="" />
+              <span>Green</span>
+            </button>
+            <button class="character-option" type="button" data-character="potato" data-src="./public/superme-potato.png" aria-pressed="false">
+              <img src="./public/superme-potato.png" alt="" />
+              <span>Potato</span>
+            </button>
+          </div>
+
+          <label class="switch-row compact">
+            <input id="faceToggle" type="checkbox" checked />
+            <span class="switch-track"></span>
+            <span>
+              <strong>Use my eyes & teeth</strong>
+              <small>Live camera face cutouts</small>
+            </span>
+          </label>
+
+          <div>
+            <h2>Background</h2>
+            <div class="swatches" id="backgroundGrid" role="radiogroup" aria-label="Choose background">
+              <button class="swatch is-active" type="button" data-bg="#ffffff" aria-label="White" aria-pressed="true"></button>
+              <button class="swatch mint" type="button" data-bg="#E9FFF6" aria-label="Mint" aria-pressed="false"></button>
+              <button class="swatch sky" type="button" data-bg="#EAF4FF" aria-label="Sky" aria-pressed="false"></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="cameraSelect">Camera</label>
+            <select id="cameraSelect">
+              <option value="user">Front / default</option>
+              <option value="environment">Rear camera</option>
+            </select>
+          </div>
+
+          <div class="tips">
+            <strong>Canvas output</strong>
+            <p>White background, screen, camera window, animated character, microphone, then export.</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
