@@ -49,12 +49,12 @@ let faceState = {
 
 const characterProfile = {
   sunny: {
-    scale: 0.28,
-    screenScale: 0.17,
-    eyeLeft: { x: 0.405, y: 0.247, w: 0.15, h: 0.082 },
-    eyeRight: { x: 0.595, y: 0.247, w: 0.15, h: 0.082 },
-    eye: { x: 0.5, y: 0.245, w: 0.28, h: 0.09 },
-    mouth: { x: 0.5, y: 0.365, w: 0.255, h: 0.086 },
+    scale: 0.34,
+    screenScale: 0.19,
+    eyeLeft: { x: 0.405, y: 0.245, w: 0.18, h: 0.092 },
+    eyeRight: { x: 0.595, y: 0.245, w: 0.18, h: 0.092 },
+    eye: { x: 0.5, y: 0.245, w: 0.34, h: 0.1 },
+    mouth: { x: 0.5, y: 0.374, w: 0.32, h: 0.105 },
     moustache: { x: 0.5, y: 0.315, w: 0.68, h: 0.22 }
   },
   green: {
@@ -102,6 +102,60 @@ function setCanvasQuality() {
   const quality = qualityMap[qualitySelect.value];
   canvas.width = quality.width;
   canvas.height = quality.height;
+}
+
+function drawStoryBackground() {
+  const w = canvas.width;
+  const h = canvas.height;
+  const sky = ctx.createLinearGradient(0, 0, 0, h * 0.72);
+  sky.addColorStop(0, "#39aaff");
+  sky.addColorStop(0.54, "#8bd7ff");
+  sky.addColorStop(1, "#fff7d8");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.save();
+  ctx.globalAlpha = 0.84;
+  ctx.fillStyle = "#ffffff";
+  [
+    [0.1, 0.13, 0.18, 0.035],
+    [0.2, 0.12, 0.26, 0.045],
+    [0.78, 0.22, 0.25, 0.038],
+    [0.9, 0.2, 0.17, 0.03]
+  ].forEach(([cx, cy, rw, rh]) => {
+    ctx.beginPath();
+    ctx.ellipse(w * cx, h * cy, w * rw, h * rh, -0.04, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  const drawHill = (color, y, amp, offset) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += w / 18) {
+      const py = h * y + Math.sin(x / w * Math.PI * 3 + offset) * h * amp;
+      ctx.lineTo(x, py);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  drawHill("#99d44d", 0.68, 0.035, 0.5);
+  drawHill("#5bb95c", 0.77, 0.045, 1.7);
+  drawHill("#2f9a54", 0.87, 0.035, 2.6);
+
+  ctx.save();
+  ctx.globalAlpha = 0.58;
+  ctx.strokeStyle = "#2b93dd";
+  ctx.lineWidth = Math.max(8, w * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(w * 0.68, h);
+  ctx.bezierCurveTo(w * 0.58, h * 0.91, w * 0.8, h * 0.84, w * 0.72, h * 0.76);
+  ctx.bezierCurveTo(w * 0.62, h * 0.67, w * 0.82, h * 0.66, w * 0.92, h * 0.58);
+  ctx.stroke();
+  ctx.restore();
 }
 
 async function startCamera() {
@@ -320,6 +374,13 @@ function drawFeatureShape(centerX, centerY, width, height, shape) {
   ctx.closePath();
 }
 
+function featureEdgeAlpha(edge, featherStart = 0.68) {
+  if (edge <= featherStart) return 1;
+  if (edge >= 1) return 0;
+  const t = (edge - featherStart) / (1 - featherStart);
+  return 1 - t * t * (3 - 2 * t);
+}
+
 function pupilOffset(kind) {
   if (!faceState.landmarks) return { x: 0, y: 0 };
   const landmarks = faceState.landmarks;
@@ -360,8 +421,8 @@ function extractEyePatch(video, source) {
   const data = imageData.data;
   const cx = patchW / 2;
   const cy = patchH / 2;
-  const rx = patchW * 0.48;
-  const ry = patchH * 0.42;
+  const rx = patchW * 0.5;
+  const ry = patchH * 0.46;
 
   for (let i = 0; i < data.length; i += 4) {
     const index = i / 4;
@@ -375,12 +436,13 @@ function extractEyePatch(video, source) {
     const brightness = (r + g + b) / 3;
     const saturation = max ? (max - min) / max : 0;
     const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
-    const inEyeShape = edge <= 1;
-    const nearOuterEdge = edge > 0.72;
+    const softAlpha = featureEdgeAlpha(edge, 0.62);
+    const nearOuterEdge = edge > 0.56;
     const isSpecular = brightness > 216 && saturation < 0.18;
-    const isFrameLike = brightness < 42 && nearOuterEdge;
+    const isFrameLike = brightness < 50 && nearOuterEdge;
+    const isGlassesGlare = brightness > 186 && saturation < 0.12 && nearOuterEdge;
 
-    if (!inEyeShape || isSpecular || isFrameLike) {
+    if (!softAlpha || isSpecular || isFrameLike || isGlassesGlare) {
       data[i + 3] = 0;
       continue;
     }
@@ -388,7 +450,7 @@ function extractEyePatch(video, source) {
     data[i] = clamp(r * 1.02, 0, 255);
     data[i + 1] = clamp(g * 1.01, 0, 255);
     data[i + 2] = clamp(b * 0.98, 0, 255);
-    data[i + 3] = 255;
+    data[i + 3] = Math.round(255 * softAlpha);
   }
 
   featureCtx.putImageData(imageData, 0, 0);
@@ -407,13 +469,13 @@ function drawWarpedEyeFeature(video, centerX, centerY, width, height, source, ki
   ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate(side * -0.08);
-  ctx.scale(1.18, 0.78 + open * 0.22);
+  ctx.scale(1.28, 0.72 + open * 0.25);
   ctx.translate(-centerX, -centerY);
-  drawFeatureShape(centerX, centerY, width, eyeHeight, "eye");
+  drawFeatureShape(centerX, centerY, width * 1.1, eyeHeight * 1.06, "eye");
   ctx.clip();
   ctx.globalAlpha = 1;
-  ctx.filter = "saturate(1.08) contrast(1.12) brightness(0.98)";
-  ctx.drawImage(patch, centerX - width / 2, centerY - eyeHeight / 2, width, eyeHeight);
+  ctx.filter = "saturate(1.03) contrast(1.08) brightness(0.96)";
+  ctx.drawImage(patch, centerX - width * 0.58, centerY - eyeHeight * 0.56, width * 1.16, eyeHeight * 1.12);
   ctx.restore();
 
 }
@@ -422,8 +484,8 @@ function warpedMouthMetrics(centerX, centerY, width, height) {
   const open = clamp(faceState.active ? faceState.mouthOpen : 0.28, 0, 1);
   const smile = clamp(faceState.active ? faceState.smile : 0.15, 0, 1);
   const archedY = centerY - height * (0.08 + smile * 0.08);
-  const visibleWidth = width * (0.82 + smile * 0.24 - open * 0.05);
-  const visibleHeight = Math.max(height * 0.16, height * (0.24 + open * 1.06));
+  const visibleWidth = width * (0.9 + smile * 0.18 - open * 0.04);
+  const visibleHeight = Math.max(height * 0.18, height * (0.26 + open * 1.1));
   const skew = (faceState.landmarks ? pupilOffset("left").x + pupilOffset("right").x : 0) * width * 0.05;
 
   return {
@@ -455,8 +517,8 @@ function extractInnerMouthPatch(video, source) {
   const data = imageData.data;
   const cx = patchW / 2;
   const cy = patchH / 2;
-  const rx = patchW * 0.47;
-  const ry = patchH * 0.42;
+  const rx = patchW * 0.5;
+  const ry = patchH * 0.44;
 
   for (let i = 0; i < data.length; i += 4) {
     const index = i / 4;
@@ -469,22 +531,23 @@ function extractInnerMouthPatch(video, source) {
     const min = Math.min(r, g, b);
     const brightness = (r + g + b) / 3;
     const saturation = max ? (max - min) / max : 0;
-    const inMouthShape = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+    const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
+    const softAlpha = featureEdgeAlpha(edge, 0.58);
     const isTeeth = brightness > 142 && saturation < 0.34;
     const isInnerMouth = brightness < 82 || (r > g * 1.12 && r > b * 1.08 && brightness < 118);
-    const isSkinOrLip = brightness > 95 && r > g * 1.12 && g > b * 1.05 && saturation > 0.24;
+    const isLipShadow = r > g * 1.06 && g > b * 0.92 && brightness < 145 && saturation > 0.16;
+    const isSkinOrLipEdge = brightness > 128 && r > g * 1.12 && g > b * 1.02 && saturation > 0.24 && edge > 0.5;
     const isSpecularEdge = brightness > 218 && saturation < 0.16;
 
-    if (!inMouthShape || (!isTeeth && !isInnerMouth) || isSkinOrLip || isSpecularEdge) {
+    if (!softAlpha || (!isTeeth && !isInnerMouth && !isLipShadow) || isSkinOrLipEdge || isSpecularEdge) {
       data[i + 3] = 0;
       continue;
     }
 
-    const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
     data[i] = clamp(r * 1.04 + 4, 0, 255);
     data[i + 1] = clamp(g * 1.02 + 2, 0, 255);
     data[i + 2] = clamp(b * 0.96, 0, 255);
-    data[i + 3] = 255;
+    data[i + 3] = Math.round(255 * softAlpha);
   }
 
   featureCtx.putImageData(imageData, 0, 0);
@@ -500,11 +563,11 @@ function drawMouthFeature(video, centerX, centerY, width, height, source) {
   ctx.translate(mouth.x, mouth.y);
   ctx.scale(1.12, 0.86 + mouth.open * 0.28);
   ctx.translate(-mouth.x, -mouth.y);
-  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
+  drawFeatureShape(mouth.x, mouth.y, mouth.w * 1.08, mouth.h * 1.08, "mouth");
   ctx.clip();
   ctx.globalAlpha = 1;
-  ctx.filter = "saturate(1.08) contrast(1.2) brightness(0.98)";
-  ctx.drawImage(patch, mouth.x - mouth.w / 2, mouth.y - mouth.h / 2, mouth.w, mouth.h);
+  ctx.filter = "saturate(1.02) contrast(1.15) brightness(0.98)";
+  ctx.drawImage(patch, mouth.x - mouth.w * 0.55, mouth.y - mouth.h * 0.54, mouth.w * 1.1, mouth.h * 1.08);
   ctx.restore();
 }
 
@@ -550,8 +613,8 @@ function cutFeatureHoles(x, y, w, h, profile) {
   for (const seat of seats) {
     const cx = x + w * seat.x;
     const cy = y + h * seat.y;
-    const sw = w * seat.w * (seat.shape === "mouth" ? 1.74 : 1.62);
-    const sh = h * seat.h * (seat.shape === "mouth" ? 1.78 : 1.62);
+    const sw = w * seat.w * (seat.shape === "mouth" ? 2.16 : 1.95);
+    const sh = h * seat.h * (seat.shape === "mouth" ? 2.08 : 1.85);
     drawFeatureShape(cx, cy, sw, sh, seat.shape);
     ctx.fillStyle = "#000";
     ctx.fill();
@@ -600,10 +663,10 @@ function drawLensFeatures(x, y, w, h, profile, anchorX, anchorY) {
     ctx.translate(-anchorX, -anchorY);
   }
   cutFeatureHoles(x, y, w, h, profile);
+  drawMustacheFrontLayer(x, y, w, h, profile);
   drawWarpedEyeFeature(cameraVideo, leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, leftEyeSource, "left");
   drawWarpedEyeFeature(cameraVideo, rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, rightEyeSource, "right");
   drawMouthFeature(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
-  drawMustacheFrontLayer(x, y, w, h, profile);
   ctx.restore();
 }
 
@@ -763,8 +826,12 @@ function drawIdlePrompt() {
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (backgroundColor === "story") {
+    drawStoryBackground();
+  } else {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   if (screenStream && screenVideo.videoWidth) {
     drawCover(screenVideo, 0, 0, canvas.width, canvas.height);

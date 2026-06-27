@@ -410,6 +410,13 @@ video {
   background: #eaf4ff;
 }
 
+.swatch.story {
+  background:
+    radial-gradient(circle at 54% 72%, #ffb638 0 11%, transparent 12%),
+    linear-gradient(160deg, transparent 0 46%, #65b95b 47% 68%, #2d9a55 69%),
+    linear-gradient(#45adff 0 58%, #b8eaff 59%);
+}
+
 .swatch.is-active {
   border-color: #171717;
 }
