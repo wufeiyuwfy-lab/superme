@@ -385,17 +385,13 @@ function extractEyePatch(video, source) {
       continue;
     }
 
-    const feather = clamp((1 - edge) / 0.2, 0, 1);
     data[i] = clamp(r * 1.02, 0, 255);
     data[i + 1] = clamp(g * 1.01, 0, 255);
     data[i + 2] = clamp(b * 0.98, 0, 255);
-    data[i + 3] = Math.round(238 * feather);
+    data[i + 3] = 255;
   }
 
   featureCtx.putImageData(imageData, 0, 0);
-  featureCtx.filter = "blur(0.35px)";
-  featureCtx.drawImage(featureBuffer, 0, 0);
-  featureCtx.filter = "none";
   return featureBuffer;
 }
 
@@ -415,36 +411,11 @@ function drawWarpedEyeFeature(video, centerX, centerY, width, height, source, ki
   ctx.translate(-centerX, -centerY);
   drawFeatureShape(centerX, centerY, width, eyeHeight, "eye");
   ctx.clip();
-  ctx.globalAlpha = 0.98;
+  ctx.globalAlpha = 1;
   ctx.filter = "saturate(1.08) contrast(1.12) brightness(0.98)";
   ctx.drawImage(patch, centerX - width / 2, centerY - eyeHeight / 2, width, eyeHeight);
   ctx.restore();
 
-  ctx.save();
-  ctx.translate(centerX, centerY);
-  ctx.rotate(side * -0.08);
-  ctx.scale(1.18, 0.78 + open * 0.22);
-  ctx.translate(-centerX, -centerY);
-  drawFeatureShape(centerX, centerY, width, eyeHeight, "eye");
-  ctx.lineWidth = Math.max(2, height * 0.18);
-  ctx.strokeStyle = "rgba(38, 16, 7, 0.38)";
-  ctx.stroke();
-  ctx.restore();
-
-  if (blink > 0.62) {
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate(side * -0.08);
-    ctx.translate(-centerX, -centerY);
-    ctx.lineCap = "round";
-    ctx.lineWidth = Math.max(2.5, height * 0.18);
-    ctx.strokeStyle = "rgba(54, 20, 6, 0.62)";
-    ctx.beginPath();
-    ctx.moveTo(centerX - width * 0.42, centerY);
-    ctx.quadraticCurveTo(centerX, centerY + height * 0.05, centerX + width * 0.42, centerY);
-    ctx.stroke();
-    ctx.restore();
-  }
 }
 
 function warpedMouthMetrics(centerX, centerY, width, height) {
@@ -510,49 +481,18 @@ function extractInnerMouthPatch(video, source) {
     }
 
     const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
-    const feather = clamp((1 - edge) / 0.18, 0, 1);
     data[i] = clamp(r * 1.04 + 4, 0, 255);
     data[i + 1] = clamp(g * 1.02 + 2, 0, 255);
     data[i + 2] = clamp(b * 0.96, 0, 255);
-    data[i + 3] = Math.round(225 * feather);
+    data[i + 3] = 255;
   }
 
   featureCtx.putImageData(imageData, 0, 0);
-  featureCtx.filter = "blur(0.4px)";
-  featureCtx.drawImage(featureBuffer, 0, 0);
-  featureCtx.filter = "none";
   return featureBuffer;
 }
 
 function drawMouthFeature(video, centerX, centerY, width, height, source) {
   const mouth = warpedMouthMetrics(centerX, centerY, width, height);
-
-  ctx.save();
-  ctx.translate(mouth.x, mouth.y);
-  ctx.scale(1.12, 0.86 + mouth.open * 0.28);
-  ctx.translate(-mouth.x, -mouth.y);
-  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
-  ctx.fillStyle = "rgba(37, 10, 7, 0.96)";
-  ctx.fill();
-  ctx.clip();
-  if (mouth.open > 0.12) {
-    const teethH = mouth.h * clamp(0.25 - mouth.open * 0.06, 0.12, 0.24);
-    ctx.fillStyle = "rgba(248, 239, 220, 0.94)";
-    drawRoundRect(mouth.x - mouth.w * 0.34, mouth.y - mouth.h * 0.38, mouth.w * 0.68, teethH, teethH * 0.42);
-    ctx.fill();
-    ctx.fillStyle = "rgba(104, 44, 27, 0.56)";
-    ctx.fillRect(mouth.x - mouth.w * 0.25, mouth.y - mouth.h * 0.38, 1.4, teethH);
-    ctx.fillRect(mouth.x, mouth.y - mouth.h * 0.38, 1.4, teethH);
-    ctx.fillRect(mouth.x + mouth.w * 0.25, mouth.y - mouth.h * 0.38, 1.4, teethH);
-  }
-  if (mouth.open > 0.42) {
-    ctx.beginPath();
-    ctx.ellipse(mouth.x, mouth.y + mouth.h * 0.2, mouth.w * 0.24, mouth.h * 0.13, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(166, 65, 45, 0.72)";
-    ctx.fill();
-  }
-  ctx.restore();
-
   const patch = extractInnerMouthPatch(video, source);
   if (!patch) return;
 
@@ -562,18 +502,9 @@ function drawMouthFeature(video, centerX, centerY, width, height, source) {
   ctx.translate(-mouth.x, -mouth.y);
   drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
   ctx.clip();
-  ctx.globalAlpha = 0.48;
-  ctx.filter = "saturate(1.04) contrast(1.18) brightness(0.96)";
+  ctx.globalAlpha = 1;
+  ctx.filter = "saturate(1.08) contrast(1.2) brightness(0.98)";
   ctx.drawImage(patch, mouth.x - mouth.w / 2, mouth.y - mouth.h / 2, mouth.w, mouth.h);
-  ctx.restore();
-
-  ctx.save();
-  const shadow = ctx.createRadialGradient(mouth.x, mouth.y, 1, mouth.x, mouth.y, width * 0.58);
-  shadow.addColorStop(0, "rgba(0, 0, 0, 0)");
-  shadow.addColorStop(1, "rgba(47, 15, 7, 0.22)");
-  drawFeatureShape(mouth.x, mouth.y, mouth.w, mouth.h, "mouth");
-  ctx.fillStyle = shadow;
-  ctx.fill();
   ctx.restore();
 }
 
@@ -607,7 +538,7 @@ function drawMustacheFrontLayer(x, y, w, h, profile) {
   ctx.restore();
 }
 
-function clearFeatureSeats(x, y, w, h, profile) {
+function cutFeatureHoles(x, y, w, h, profile) {
   const seats = [
     profile.eyeLeft && { ...profile.eyeLeft, shape: "eye" },
     profile.eyeRight && { ...profile.eyeRight, shape: "eye" },
@@ -615,18 +546,14 @@ function clearFeatureSeats(x, y, w, h, profile) {
   ].filter(Boolean);
 
   ctx.save();
-  ctx.globalCompositeOperation = "source-over";
+  ctx.globalCompositeOperation = "destination-out";
   for (const seat of seats) {
     const cx = x + w * seat.x;
     const cy = y + h * seat.y;
-    const sw = w * seat.w * (seat.shape === "mouth" ? 1.55 : 1.48);
-    const sh = h * seat.h * (seat.shape === "mouth" ? 1.62 : 1.52);
-    const gradient = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(sw, sh) * 0.65);
-    gradient.addColorStop(0, "rgba(255, 163, 39, 1)");
-    gradient.addColorStop(0.58, "rgba(237, 110, 16, 0.94)");
-    gradient.addColorStop(1, "rgba(237, 110, 16, 0.42)");
+    const sw = w * seat.w * (seat.shape === "mouth" ? 1.74 : 1.62);
+    const sh = h * seat.h * (seat.shape === "mouth" ? 1.78 : 1.62);
     drawFeatureShape(cx, cy, sw, sh, seat.shape);
-    ctx.fillStyle = selectedCharacter === "green" ? "rgba(62, 104, 30, 0.98)" : gradient;
+    ctx.fillStyle = "#000";
     ctx.fill();
   }
   ctx.restore();
@@ -672,7 +599,7 @@ function drawLensFeatures(x, y, w, h, profile, anchorX, anchorY) {
     ctx.rotate(faceState.tilt * 0.72);
     ctx.translate(-anchorX, -anchorY);
   }
-  clearFeatureSeats(x, y, w, h, profile);
+  cutFeatureHoles(x, y, w, h, profile);
   drawWarpedEyeFeature(cameraVideo, leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, leftEyeSource, "left");
   drawWarpedEyeFeature(cameraVideo, rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, rightEyeSource, "right");
   drawMouthFeature(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
