@@ -16,11 +16,14 @@ const characterGrid = document.querySelector("#characterGrid");
 const backgroundGrid = document.querySelector("#backgroundGrid");
 const statusText = document.querySelector("#statusText");
 const faceToggle = document.querySelector("#faceToggle");
+const debugToggle = document.querySelector("#debugToggle");
 
 const mascot = new Image();
 mascot.src = "./assets/superme-mustache.png";
 const featureBuffer = document.createElement("canvas");
 const featureCtx = featureBuffer.getContext("2d", { willReadFrequently: true });
+const maskBuffer = document.createElement("canvas");
+const maskCtx = maskBuffer.getContext("2d", { willReadFrequently: true });
 
 let cameraStream;
 let screenStream;
@@ -28,6 +31,9 @@ let micStream;
 let recorder;
 let chunks = [];
 let downloadUrl = "";
+let fps = 0;
+let frameCount = 0;
+let lastFpsTime = performance.now();
 let selectedCharacter = "sunny";
 let backgroundColor = "#ffffff";
 let frame = { x: 0.08, y: 0.68, w: 0.25, h: 0.25 };
@@ -381,6 +387,69 @@ function featureEdgeAlpha(edge, featherStart = 0.68) {
   return 1 - t * t * (3 - 2 * t);
 }
 
+const featureLandmarkIds = {
+  leftEye: [33, 160, 158, 133, 153, 144],
+  rightEye: [362, 385, 387, 263, 373, 380],
+  mouth: [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95]
+};
+
+function featurePolygon(kind, source, patchW, patchH) {
+  if (!faceState.landmarks) return null;
+  const ids = featureLandmarkIds[kind];
+  if (!ids?.every((id) => faceState.landmarks[id])) return null;
+
+  return ids.map((id) => ({
+    x: ((faceState.landmarks[id].x - source.x) / source.w) * patchW,
+    y: ((faceState.landmarks[id].y - source.y) / source.h) * patchH
+  }));
+}
+
+function buildFeatureMask(kind, source, patchW, patchH) {
+  maskBuffer.width = patchW;
+  maskBuffer.height = patchH;
+  maskCtx.clearRect(0, 0, patchW, patchH);
+  maskCtx.fillStyle = "#fff";
+
+  const polygon = featurePolygon(kind, source, patchW, patchH);
+  if (polygon?.length) {
+    maskCtx.beginPath();
+    polygon.forEach((point, index) => {
+      if (index === 0) maskCtx.moveTo(point.x, point.y);
+      else maskCtx.lineTo(point.x, point.y);
+    });
+    maskCtx.closePath();
+    maskCtx.fill();
+  } else {
+    const rx = patchW * (kind === "mouth" ? 0.42 : 0.44);
+    const ry = patchH * (kind === "mouth" ? 0.34 : 0.36);
+    maskCtx.beginPath();
+    maskCtx.ellipse(patchW / 2, patchH / 2, rx, ry, 0, 0, Math.PI * 2);
+    maskCtx.fill();
+  }
+
+  const maskData = maskCtx.getImageData(0, 0, patchW, patchH);
+  const data = maskData.data;
+  const passes = 2;
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    const copy = new Uint8ClampedArray(data);
+    for (let y = 1; y < patchH - 1; y += 1) {
+      for (let x = 1; x < patchW - 1; x += 1) {
+        const i = (y * patchW + x) * 4 + 3;
+        data[i] = (
+          copy[i] * 4 +
+          copy[i - 4] +
+          copy[i + 4] +
+          copy[i - patchW * 4] +
+          copy[i + patchW * 4]
+        ) / 8;
+      }
+    }
+  }
+
+  return maskData;
+}
+
 function pupilOffset(kind) {
   if (!faceState.landmarks) return { x: 0, y: 0 };
   const landmarks = faceState.landmarks;
@@ -402,7 +471,7 @@ function pupilOffset(kind) {
   };
 }
 
-function extractEyePatch(video, source) {
+function extractEyePatch(video, source, kind) {
   if (!video.videoWidth || !video.videoHeight) return;
 
   const sourceX = video.videoWidth * source.x;
@@ -419,10 +488,11 @@ function extractEyePatch(video, source) {
 
   const imageData = featureCtx.getImageData(0, 0, patchW, patchH);
   const data = imageData.data;
+  const mask = buildFeatureMask(kind === "left" ? "leftEye" : "rightEye", source, patchW, patchH).data;
   const cx = patchW / 2;
   const cy = patchH / 2;
-  const rx = patchW * 0.5;
-  const ry = patchH * 0.46;
+  const rx = patchW * 0.46;
+  const ry = patchH * 0.38;
 
   for (let i = 0; i < data.length; i += 4) {
     const index = i / 4;
@@ -436,14 +506,16 @@ function extractEyePatch(video, source) {
     const brightness = (r + g + b) / 3;
     const saturation = max ? (max - min) / max : 0;
     const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
-    const softAlpha = featureEdgeAlpha(edge, 0.62);
+    const maskAlpha = mask[i + 3] / 255;
+    const softAlpha = maskAlpha * featureEdgeAlpha(edge, 0.7);
     const nearOuterEdge = edge > 0.48;
     const nearTopOrSide = y < patchH * 0.34 || x < patchW * 0.18 || x > patchW * 0.82;
     const isSpecular = brightness > 216 && saturation < 0.18;
     const isFrameLike = brightness < 58 && (nearOuterEdge || nearTopOrSide);
     const isGlassesGlare = brightness > 176 && saturation < 0.14 && (nearOuterEdge || nearTopOrSide);
+    const isSkinTone = r > g * 1.12 && g > b * 1.02 && brightness > 92 && saturation > 0.18;
 
-    if (!softAlpha || isSpecular || isFrameLike || isGlassesGlare) {
+    if (!softAlpha || isSpecular || isFrameLike || isGlassesGlare || (isSkinTone && edge > 0.52)) {
       data[i + 3] = 0;
       continue;
     }
@@ -464,7 +536,7 @@ function drawWarpedEyeFeature(video, centerX, centerY, width, height, source, ki
   const open = clamp(1 - blink * 0.94, 0.05, 1);
   const squash = faceState.active ? 0.82 + faceState.smile * 0.08 : 0.86;
   const eyeHeight = height * open * squash;
-  const patch = extractEyePatch(video, source);
+  const patch = extractEyePatch(video, source, kind);
   if (!patch) return;
 
   ctx.save();
@@ -516,10 +588,11 @@ function extractInnerMouthPatch(video, source) {
 
   const imageData = featureCtx.getImageData(0, 0, patchW, patchH);
   const data = imageData.data;
+  const mask = buildFeatureMask("mouth", source, patchW, patchH).data;
   const cx = patchW / 2;
   const cy = patchH / 2;
-  const rx = patchW * 0.5;
-  const ry = patchH * 0.44;
+  const rx = patchW * 0.44;
+  const ry = patchH * 0.34;
 
   for (let i = 0; i < data.length; i += 4) {
     const index = i / 4;
@@ -533,10 +606,11 @@ function extractInnerMouthPatch(video, source) {
     const brightness = (r + g + b) / 3;
     const saturation = max ? (max - min) / max : 0;
     const edge = Math.sqrt(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2);
-    const softAlpha = featureEdgeAlpha(edge, 0.58);
+    const maskAlpha = mask[i + 3] / 255;
+    const softAlpha = maskAlpha * featureEdgeAlpha(edge, 0.66);
     const isTeeth = brightness > 142 && saturation < 0.34;
     const isInnerMouth = brightness < 82 || (r > g * 1.12 && r > b * 1.08 && brightness < 118);
-    const isSkinOrLipEdge = brightness > 128 && r > g * 1.12 && g > b * 1.02 && saturation > 0.24 && edge > 0.5;
+    const isSkinOrLipEdge = brightness > 108 && r > g * 1.08 && g > b * 0.96 && saturation > 0.18;
     const isSpecularEdge = brightness > 218 && saturation < 0.16;
 
     if (!softAlpha || (!isTeeth && !isInnerMouth) || isSkinOrLipEdge || isSpecularEdge) {
@@ -601,25 +675,27 @@ function drawMustacheFrontLayer(x, y, w, h, profile) {
   ctx.restore();
 }
 
-function cutFeatureHoles(x, y, w, h, profile) {
+function drawFeatureSeats(x, y, w, h, profile) {
   const seats = [
     profile.eyeLeft && { ...profile.eyeLeft, shape: "eye" },
     profile.eyeRight && { ...profile.eyeRight, shape: "eye" },
     profile.mouth && { ...profile.mouth, shape: "mouth" }
   ].filter(Boolean);
 
-  ctx.save();
-  ctx.globalCompositeOperation = "destination-out";
   for (const seat of seats) {
     const cx = x + w * seat.x;
     const cy = y + h * seat.y;
-    const sw = w * seat.w * (seat.shape === "mouth" ? 1.08 : 1.02);
-    const sh = h * seat.h * (seat.shape === "mouth" ? 1.06 : 1.02);
+    const sw = w * seat.w * (seat.shape === "mouth" ? 0.96 : 0.88);
+    const sh = h * seat.h * (seat.shape === "mouth" ? 0.86 : 0.72);
+
+    ctx.save();
+    ctx.shadowColor = seat.shape === "mouth" ? "rgba(63, 21, 7, 0.42)" : "rgba(58, 25, 5, 0.34)";
+    ctx.shadowBlur = Math.max(10, w * 0.018);
+    ctx.fillStyle = seat.shape === "mouth" ? "rgba(53, 19, 8, 0.54)" : "rgba(46, 20, 8, 0.5)";
     drawFeatureShape(cx, cy, sw, sh, seat.shape);
-    ctx.fillStyle = "#000";
     ctx.fill();
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function drawLensFeatures(x, y, w, h, profile, anchorX, anchorY) {
@@ -662,11 +738,54 @@ function drawLensFeatures(x, y, w, h, profile, anchorX, anchorY) {
     ctx.rotate(faceState.tilt * 0.72);
     ctx.translate(-anchorX, -anchorY);
   }
-  cutFeatureHoles(x, y, w, h, profile);
-  drawMustacheFrontLayer(x, y, w, h, profile);
+  drawFeatureSeats(x, y, w, h, profile);
   drawWarpedEyeFeature(cameraVideo, leftEyeX, leftEyeY, leftEyeWidth, leftEyeHeight, leftEyeSource, "left");
   drawWarpedEyeFeature(cameraVideo, rightEyeX, rightEyeY, rightEyeWidth, rightEyeHeight, rightEyeSource, "right");
   drawMouthFeature(cameraVideo, mouthX, mouthY, w * profile.mouth.w * smileWidth, h * profile.mouth.h * mouthHeight, mouthSource);
+  drawMustacheFrontLayer(x, y, w, h, profile);
+  drawDebugOverlay(x, y, w, h, profile);
+  ctx.restore();
+}
+
+function drawDebugOverlay(x, y, w, h, profile) {
+  if (!debugToggle?.checked) return;
+
+  const seats = [
+    profile.eyeLeft && { ...profile.eyeLeft, shape: "eye", color: "#37d67a" },
+    profile.eyeRight && { ...profile.eyeRight, shape: "eye", color: "#37d67a" },
+    profile.mouth && { ...profile.mouth, shape: "mouth", color: "#ff4f7b" }
+  ].filter(Boolean);
+
+  ctx.save();
+  ctx.lineWidth = Math.max(3, w * 0.004);
+  for (const seat of seats) {
+    ctx.strokeStyle = seat.color;
+    drawFeatureShape(x + w * seat.x, y + h * seat.y, w * seat.w, h * seat.h, seat.shape);
+    ctx.stroke();
+  }
+
+  if (faceState.landmarks) {
+    ctx.fillStyle = "rgba(55, 214, 122, 0.74)";
+    [...featureLandmarkIds.leftEye, ...featureLandmarkIds.rightEye, ...featureLandmarkIds.mouth].forEach((id) => {
+      const point = faceState.landmarks[id];
+      if (!point) return;
+      const px = cameraSelect.value === "user" ? (1 - point.x) * canvas.width : point.x * canvas.width;
+      const py = point.y * canvas.height;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(2, canvas.width * 0.002), 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+  ctx.fillRect(18, 18, 220, 92);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 24px ui-rounded, system-ui";
+  ctx.textAlign = "left";
+  ctx.fillText(`FPS ${fps}`, 34, 54);
+  ctx.font = "700 18px ui-rounded, system-ui";
+  ctx.fillText(faceState.active ? "Tracking face" : "No face", 34, 84);
   ctx.restore();
 }
 
@@ -692,23 +811,23 @@ function averagePoint(points) {
 function landmarkSourceBox(kind) {
   const landmarks = faceState.landmarks;
   const ids = kind === "leftEye"
-    ? [33, 133, 159, 145, 160, 144]
+    ? featureLandmarkIds.leftEye
     : kind === "rightEye"
-      ? [362, 263, 386, 374, 387, 373]
-      : [61, 291, 13, 14, 78, 308];
+      ? featureLandmarkIds.rightEye
+      : featureLandmarkIds.mouth;
   const points = ids.map((id) => landmarks[id]);
   const minX = Math.min(...points.map((point) => point.x));
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxY = Math.max(...points.map((point) => point.y));
-  const padX = kind.includes("Eye") ? 0.022 : 0.026;
-  const padY = kind.includes("Eye") ? 0.018 : 0.024;
+  const padX = kind.includes("Eye") ? 0.01 : 0.012;
+  const padY = kind.includes("Eye") ? 0.008 : 0.01;
 
   return {
     x: clamp(minX - padX, 0, 1),
     y: clamp(minY - padY, 0, 1),
-    w: clamp(maxX - minX + padX * 2, 0.035, 0.42),
-    h: clamp(maxY - minY + padY * 2, 0.03, 0.28)
+    w: clamp(maxX - minX + padX * 2, kind.includes("Eye") ? 0.035 : 0.05, kind.includes("Eye") ? 0.2 : 0.22),
+    h: clamp(maxY - minY + padY * 2, kind.includes("Eye") ? 0.024 : 0.035, kind.includes("Eye") ? 0.12 : 0.18)
   };
 }
 
@@ -825,6 +944,14 @@ function drawIdlePrompt() {
 }
 
 function render() {
+  frameCount += 1;
+  const now = performance.now();
+  if (now - lastFpsTime > 500) {
+    fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (backgroundColor === "story") {
     drawStoryBackground();
